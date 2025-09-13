@@ -1,0 +1,140 @@
+name: PMD Reviewdog Reporter
+description: Run PMD static analysis and report issues in PRs via reviewdog comments
+author: Rodion Korneev
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  github_token:
+    description: |
+      GitHub token used by PMD to determine modified files and by reviewdog to post comments.
+      Defaults to `github.token`.
+    required: false
+    default: ${{ github.token }}
+
+  # PMD
+  pmd_version:
+    description: |
+      PMD version to use. Using "latest" automatically downloads the latest release.
+      Available versions: https://github.com/pmd/pmd/releases.
+      See `version` in https://github.com/pmd/pmd-github-action.
+    required: false
+    default: 'latest'
+
+  pmd_download_url:
+    description: |
+      Optionally specify a custom URL for downloading the PMD binary.
+      See `downloadUrl` in https://github.com/pmd/pmd-github-action.
+    required: false
+
+  workdir:
+    description: |
+      Directory to run PMD in.
+      See `sourcePath` in https://github.com/pmd/pmd-github-action.
+    required: false
+    default: .
+
+  rulesets:
+    description: |
+      Comma-separated list of PMD rulesets to use.
+      You can use default rulesets provided by PMD, or create your own custom ruleset and reference it.
+      See `rulesets` in https://github.com/pmd/pmd-github-action.
+    required: true
+
+  analyze_modified_only:
+    description: |
+      Only analyze files modified in a PR or push instead of all files in `workdir`.
+      See `analyzeModifiedFilesOnly` in https://github.com/pmd/pmd-github-action.
+    required: false
+    default: 'false'
+
+  upload_sarif_report:
+    description: |
+      Upload generated SARIF report as artifact named "PMD Report".
+      See `uploadSarifReport` in https://github.com/pmd/pmd-github-action.
+    required: false
+    default: 'true'
+
+  # Reviewdog
+  reviewdog_version:
+    description: |
+      Reviewdog version.
+      See `reviewdog_version` in https://github.com/reviewdog/action-setup.
+    required: false
+    default: 'latest'
+
+  tool_name:
+    description: Tool name for reviewdog reporter.
+    required: false
+    default: PMD
+
+  reporter:
+    description: |
+      Reviewdog reporter type. 
+      See available options at: https://github.com/reviewdog/reviewdog#reporters
+    required: false
+    default: github-pr-review
+
+  level:
+    description: Reviewdog report level (`info`, `warning`, `error`).
+    required: false
+    default: 'error'
+
+  fail_level:
+    description: |
+      Reviewdog fail level. Determines at which level the step fails.
+      See https://github.com/reviewdog/reviewdog?tab=readme-ov-file#exit-codes.
+    required: false
+    default: any
+
+  filter_mode:
+    description: |
+      Reviewdog filtering mode. 
+      See https://github.com/reviewdog/reviewdog?tab=readme-ov-file#filter-mode.
+    required: false
+    default: 'nofilter'
+
+  reviewdog_flags:
+    description: Additional flags to pass to reviewdog command.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Run PMD
+      id: pmd
+      uses: pmd/pmd-github-action@v2
+      with:
+        token: ${{ inputs.github_token }}
+        version: ${{ inputs.pmd_version }}
+        downloadUrl: ${{ inputs.pmd_download_url }}
+        sourcePath: ${{ inputs.workdir }}
+        rulesets: ${{ inputs.rulesets }}
+        analyzeModifiedFilesOnly: ${{ inputs.analyze_modified_only }}
+        createGitHubAnnotations: false
+        uploadSarifReport: ${{ inputs.upload_sarif_report }}
+
+    - name: Install reviewdog
+      uses: reviewdog/action-setup@v1
+      with:
+        reviewdog_version: ${{ inputs.reviewdog_version }}
+
+    - name: Report with reviewdog
+      shell: bash
+      env:
+        REVIEWDOG_GITHUB_API_TOKEN: ${{ inputs.github_token }}
+      run: |
+        echo "::group::Report with reviewdog"
+        reviewdog \
+          -f=sarif \
+          -name="${{ inputs.tool_name }}" \
+          -reporter="${{ inputs.reporter }}" \
+          -level="${{ inputs.level }}" \
+          -fail-level="${{ inputs.fail_level }}" \
+          -filter-mode="${{ inputs.filter_mode }}" \
+          ${{ inputs.reviewdog_flags }} \
+          < pmd-report.sarif
+        echo "::endgroup::"
+        echo "✅ Reviewdog reporting finished"
